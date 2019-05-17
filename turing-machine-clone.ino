@@ -1,3 +1,6 @@
+// TimeOne from https://github.com/PaulStoffregen/TimerOne
+#include <TimerOne.h>
+
 // a loose clone of a clone
 // original: MTM Turning Machine
 // clone: 2hp TM
@@ -12,9 +15,6 @@ int jack2; // A1
 int jack3; // A0
 // jack4
 #define JACK4_PIN 9
-
-// maximum amplitude of output, in volts
-//#define AMPLITUDE_MAX 3000
 
 // max number of steps
 #define STEPS_MAX 16
@@ -34,10 +34,12 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
 
   Serial.begin(115200);
+  Timer1.initialize(1000); // microseconds
+  Timer1.pwm(JACK4_PIN, 0);
 
   // fill the notes lookup table with half-note steps
   for(byte i=0; i<NOTES_MAX; i+=1) {
-    notes[i] = (i * 1000.0) / 5.0;
+    notes[i] = (i * 1000.0) / 12.0;
   }
 
   // fill the pattern buffer with the indices of the note LUT
@@ -60,14 +62,15 @@ void updateLED() {
 }
 
 int voltageToPWM(int millivolts) {
-  return map(millivolts, 0, 5000, 0, 255);
+  return map(millivolts, 0, 5000, 0, 1023);
 }
 
 void loop() {
   sampleAnalogInputs();
   int probability = map(pot1, 0, 1023, 0, 1000);
   int steps = map(pot2, 0, 1023, 1, STEPS_MAX);
-//  int amplitude = map(pot3, 0, 1023, 0, 5000);
+  // what to use pot3 for? maybe bank-switching different scales?
+  // int amplitude = map(pot3, 0, 1023, 0, 5000);
 
   if(trigger && jack3 < 512) { // falling edge
     trigger = false;
@@ -78,7 +81,8 @@ void loop() {
 
     // if a random number is under our PROB threshold,
     //  change the current LUT index in the pattern
-    if(random(0, 1000) < probability) {
+    // leave a small gap at the bottom to have a solid 'lock' area
+    if(random(25, 1000) < probability) {
       pattern[patternIndex] = random(0, NOTES_MAX);
     }
 
@@ -86,12 +90,10 @@ void loop() {
     //  and look up in the note LUT what voltage to output
     int out = notes[ pattern[ patternIndex] ];
     out = voltageToPWM(out);
-    analogWrite(JACK4_PIN, out);
+    Timer1.setPwmDuty(JACK4_PIN, out);
     Serial.println(out);
 
     // reset pattern index to zero when it reaches our step count
     patternIndex = (patternIndex + 1) % steps;
   }
-
-  
 }
