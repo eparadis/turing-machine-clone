@@ -14,25 +14,36 @@ int jack3; // A0
 #define JACK4_PIN 9
 
 // maximum amplitude of output, in volts
-#define AMPLITUDE_MAX 3000
+//#define AMPLITUDE_MAX 3000
+
+// max number of steps
+#define STEPS_MAX 16
+
+// number of notes in the output voltage LUT
+#define NOTES_MAX 12
+
 bool trigger = false;
 
-int pattern[32] = {
-  000, 100, 200, 300,
-  400, 500, 600, 700,
-  800, 900, 1000, 1100,
-  1200, 1300, 1400, 1500,
-  1600, 1700, 1800, 1900,
-  2000, 2100, 2200, 2300,
-  2400, 2500, 2600, 2700,
-  2800, 2900, 3000, 3100
-};
+int pattern[STEPS_MAX];
+int notes[NOTES_MAX];
 byte patternIndex = 0;
 
 
 void setup() {
   pinMode(JACK4_PIN, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  Serial.begin(115200);
+
+  // fill the notes lookup table with half-note steps
+  for(byte i=0; i<NOTES_MAX; i+=1) {
+    notes[i] = (i * 1000.0) / 5.0;
+  }
+
+  // fill the pattern buffer with the indices of the note LUT
+  for(byte i=0; i<STEPS_MAX; i+=1) {
+    pattern[i] = i%NOTES_MAX;
+  }
 }
 
 void sampleAnalogInputs() {
@@ -48,13 +59,15 @@ void updateLED() {
   digitalWrite(LED_BUILTIN, trigger);
 }
 
-
+int voltageToPWM(int millivolts) {
+  return map(millivolts, 0, 5000, 0, 255);
+}
 
 void loop() {
   sampleAnalogInputs();
   int probability = map(pot1, 0, 1023, 0, 1000);
-  int steps = map(pot2, 0, 1023, 1, 16);
-  int amplitude = map(pot3, 0, 1023, 0, 5000);
+  int steps = map(pot2, 0, 1023, 1, STEPS_MAX);
+//  int amplitude = map(pot3, 0, 1023, 0, 5000);
 
   if(trigger && jack3 < 512) { // falling edge
     trigger = false;
@@ -64,17 +77,19 @@ void loop() {
     updateLED();
 
     // if a random number is under our PROB threshold,
-    //  change the current value in the pattern
+    //  change the current LUT index in the pattern
     if(random(0, 1000) < probability) {
-      pattern[patternIndex] = random(0, 5000);
+      pattern[patternIndex] = random(0, NOTES_MAX);
     }
 
     // pick the current value out of the pattern
-    //  and map it to the amplitude maximum
-    //  then map it to the DAC output range
-    int out = map(pattern[patternIndex], 0, 5000, 0,
-              map(amplitude, 0, AMPLITUDE_MAX, 0, 255));
+    //  and look up in the note LUT what voltage to output
+    int out = notes[ pattern[ patternIndex] ];
+    out = voltageToPWM(out);
     analogWrite(JACK4_PIN, out);
+    Serial.println(out);
+
+    // reset pattern index to zero when it reaches our step count
     patternIndex = (patternIndex + 1) % steps;
   }
 
